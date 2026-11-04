@@ -44,14 +44,28 @@ function drawMenu(){
   $('eyebrow').textContent='FLIGHT ACADEMY';$('panel').hidden=false;$('hud').hidden=true;$('pause').hidden=true;
 }
 async function connectStore(){
-  if(!window.getDigitalGoodsService||!window.PaymentRequest){showNotice('Paid flights are available only in the Windows app installed from Microsoft Store.');return}
+  if(!window.getDigitalGoodsService||!window.PaymentRequest){
+    showNotice('Open the Microsoft Store installed app to buy paid levels.');
+    return;
+  }
   try{
     store=await window.getDigitalGoodsService(BILLING);
     if(!store)throw Error('Store billing is unavailable.');
-    const items=await store.getDetails(LEVELS.slice(1).map(l=>l.sku));
-    storeItems=new Map(items.map(x=>[x.itemId,x]));
-    await refreshPurchases(false);
-    if(storeItems.size!==4)showNotice('Some level add-ons are not published yet. Check Product IDs in Partner Center.');
+    // Fetch each product separately. An unavailable add-on must not block
+    // the purchase button for other published add-ons.
+    const tasks=LEVELS.slice(1).map(async l=>{
+      try{
+        const details=await store.getDetails([l.sku]);
+        const item=details.find(x=>x.itemId===l.sku);
+        if(item){storeItems.set(l.sku,item);drawMenu();}
+      }catch(e){console.warn('Could not load add-on '+l.sku,e);}
+    });
+    // Ownership checks are independent of product-detail loading.
+    const ownership=refreshPurchases(false);
+    await Promise.allSettled([...tasks,ownership]);
+    if(storeItems.size!==4){
+      showNotice('Some paid levels are not available yet. Available levels can still be purchased.');
+    }
   }catch(e){showNotice('Microsoft Store unavailable: '+e.message)}
   drawMenu();
 }
